@@ -2,11 +2,16 @@
 
 ESP32 firmware that receives [Art-Net](https://art-net.org.uk/) (DMX over UDP) and drives WS2812B/APA102 LED strips via FastLED. Designed as a general-purpose wireless lighting node for art sculptures and installations.
 
+Nodes can operate standalone, as a mesh bridge, or as a pure mesh slave — no controller required, and no need to maintain an IP connection to every node.
+
 ## Features
 
 - Receives Art-Net DMX frames over WiFi (UDP port 6454)
 - Drives multiple LED strips via FastLED
 - Maps Art-Net universes to strips, including strips that span multiple universes
+- **ESP-NOW mesh** — bridge nodes rebroadcast universe data to slave nodes with no router or IP management
+- **Five operating modes** — AUTO, BRIDGE, DIRECT, MESH, STANDALONE (see below)
+- **Pattern engine** — built-in animations run automatically when no DMX signal is present
 - Runtime configuration via a built-in web UI — no reflash needed for most changes
 - OTA firmware updates over the network
 - mDNS hostname (`artnode.local` by default)
@@ -24,14 +29,68 @@ Any ESP32 board works. Pin assignments for LED strips are set at compile time du
 
 ```
 src/
-  config.h              Compile-time defaults: pins, strip layout, LED type, WiFi fallback
-  runtime_config.h/cpp  NVS-backed runtime config: WiFi, brightness, strip layout
-  led_controller.h/cpp  FastLED output, Art-Net universe → strip mapping
-  status_led.h/cpp      Non-blocking status LED blink state machine
-  web_config.h/cpp      HTTP server: config UI and REST API
-  main.cpp              Init, Art-Net callback, main loop
-platformio.ini          Build environments (USB and OTA)
+  config.h               Compile-time defaults: pins, strip layout, LED type, mesh channel
+  runtime_config.h/cpp   NVS-backed runtime config: WiFi, brightness, node mode, strip layout
+  led_controller.h/cpp   FastLED output, Art-Net universe → strip mapping
+  espnow_mesh.h/cpp      ESP-NOW transport: broadcast, fragment, reassemble
+  pattern_engine.h/cpp   Local animations: rainbow, chase, pulse, twinkle, solid
+  status_led.h/cpp       Non-blocking status LED blink state machine
+  web_config.h/cpp       HTTP server: config UI and REST API
+  main.cpp               Mode-based init, Art-Net callback, main loop
+platformio.ini           Build environments (USB and OTA)
 ```
+
+## Operating Modes
+
+The node mode is set in the web UI or via the REST API and persists across reboots.
+
+| Mode | WiFi | ESP-NOW | Art-Net | Description |
+|---|---|---|---|---|
+| **AUTO** | tries | yes | yes | Default. Connects to WiFi if available → BRIDGE. On timeout → MESH slave. |
+| **BRIDGE** | required | sends | yes | Receives Art-Net and rebroadcasts to mesh via ESP-NOW. |
+| **DIRECT** | required | no | yes | WiFi only. Original behavior, no mesh involvement. |
+| **MESH** | no | receives | no | ESP-NOW slave. No WiFi; listens for broadcasts from a bridge node. |
+| **STANDALONE** | no | no | no | Runs local pattern engine continuously. No network. |
+
+### Typical deployment
+
+```
+[Art-Net controller] ──WiFi──▶ [Bridge node] ──ESP-NOW broadcast──▶ [Mesh node]
+                                     │                               [Mesh node]
+                                     └── also drives its own strips  [Mesh node]
+```
+
+Any node can be a bridge. Multiple bridges are fine. Slave nodes do not need to know bridge MAC addresses — the bridge broadcasts, everyone in range listens.
+
+### Idle fallback
+
+In all WiFi-connected modes (AUTO/BRIDGE/DIRECT), if no DMX frames arrive for 5 seconds the pattern engine activates automatically. When frames resume, it stops. Nodes are never dark.
+
+## ESP-NOW Mesh
+
+Art-Net universes are 512 bytes; ESP-NOW packets are capped at 250 bytes. The bridge fragments each universe into up to three 240-byte packets and slaves reassemble them before passing to the LED controller. Single-fragment sends (strips ≤ 80 LEDs per universe) take the fast path with no reassembly overhead.
+
+**Channel configuration:** ESP-NOW must operate on the same WiFi channel as the AP when in BRIDGE mode. Set `MESH_CHANNEL` in `config.h` to match your router's channel:
+
+```bash
+# Find your AP's channel (on the machine connected to the router):
+iw dev wlan0 info | grep channel
+```
+
+MESH-only nodes (no WiFi) set their radio channel to `MESH_CHANNEL` at boot.
+
+## Pattern Engine
+
+When no DMX signal is present, the pattern engine runs locally. The default pattern is **RAINBOW**. Patterns are selected programmatically via `patterns.setPattern()` in `main.cpp` — configurable via the REST API in a future update.
+
+| Pattern | Description | param1 | param2 |
+|---|---|---|---|
+| `OFF` | All LEDs off | — | — |
+| `SOLID` | Single color | hue (0–255) | saturation (0–255) |
+| `RAINBOW` | Moving rainbow | speed | — |
+| `CHASE` | Dot with tail | hue | speed |
+| `PULSE` | Breathing color | hue | speed |
+| `TWINKLE` | Random sparkle | hue (0=random) | density |
 
 ## Building and Flashing
 
@@ -67,6 +126,9 @@ These must be set before the first flash. Most can be overridden at runtime afte
 | `STRIPS[]` | Per-strip: data pin, LED count, starting universe, channel offset |
 | `LED_TYPE` | FastLED chip type, e.g. `WS2812B`, `APA102` |
 | `COLOR_ORDER` | e.g. `GRB` for WS2812B, `BGR` for APA102 |
+| `MESH_CHANNEL` | WiFi channel for ESP-NOW (must match AP channel in BRIDGE mode) |
+| `WIFI_TIMEOUT_MS` | How long AUTO mode waits for WiFi before falling back (default 10s) |
+| `IDLE_TIMEOUT_MS` | Seconds without DMX before pattern engine activates (default 5s) |
 
 **Strip pin numbers are compile-time only** — this is a FastLED constraint where the data pin is a C++ template parameter. If you change strip pins, update both `config.h` and the `FastLED.addLeds<>` calls in `led_controller.cpp`, then reflash.
 
@@ -74,6 +136,7 @@ These must be set before the first flash. Most can be overridden at runtime afte
 
 Once the node is on the network, open `http://artnode.local` in a browser:
 
+- Node mode (AUTO / BRIDGE / DIRECT / MESH / STANDALONE)
 - WiFi SSID, password, hostname
 - Brightness (0–255)
 - Per-strip: LED count, starting universe, channel offset
@@ -124,6 +187,7 @@ The built-in LED on GPIO 2 indicates node state:
 Served at `http://artnode.local` (or the node's IP address).
 
 - Live status: IP address, WiFi signal strength, uptime, total DMX frames received
+- Node mode selector
 - Edit WiFi credentials and hostname
 - Adjust brightness
 - Edit per-strip LED count, universe, and channel offset
@@ -139,12 +203,15 @@ The web UI is backed by a small JSON API that can also be used directly:
   "ssid": "mynetwork",
   "hostname": "artnode",
   "brightness": 200,
+  "node_mode": 0,
   "strips": [
     { "pin": 16, "num_leds": 60, "start_universe": 0, "channel_offset": 0 },
     { "pin": 17, "num_leds": 60, "start_universe": 1, "channel_offset": 0 }
   ]
 }
 ```
+
+`node_mode` values: `0`=AUTO, `1`=BRIDGE, `2`=DIRECT, `3`=MESH, `4`=STANDALONE
 
 **POST `/api/config`** — save config and reboot (password field is write-only; omit to keep existing)
 
@@ -165,7 +232,7 @@ The web UI is backed by a small JSON API that can also be used directly:
 | [FastLED](https://github.com/FastLED/FastLED) | LED strip output |
 | [ArtnetWifi](https://github.com/rstephan/ArtnetWifi) | Art-Net UDP receiver |
 | [ArduinoJson](https://arduinojson.org/) | JSON config serialization |
-| ESP32 Arduino core (built-in) | WiFi, WebServer, mDNS, OTA, NVS Preferences |
+| ESP32 Arduino core (built-in) | WiFi, WebServer, mDNS, OTA, NVS Preferences, ESP-NOW |
 
 ## Adding More Strips
 
