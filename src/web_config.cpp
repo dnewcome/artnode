@@ -50,6 +50,19 @@ static const char INDEX_HTML[] PROGMEM = R"rawlit(<!DOCTYPE html>
   <div class="pin-note">Accessible at hostname.local after save + reboot</div>
 </div>
 
+<h2>Network mode</h2>
+<div class="card">
+  <label>Node mode</label>
+  <select id="node_mode" style="width:100%;background:#111;border:1px solid #333;color:#eee;padding:.4rem .6rem;border-radius:3px;font-family:monospace;font-size:.85rem">
+    <option value="0">AUTO — WiFi if available, mesh fallback</option>
+    <option value="1">BRIDGE — WiFi + forward to ESP-NOW mesh</option>
+    <option value="2">DIRECT — WiFi only (no mesh)</option>
+    <option value="3">MESH — ESP-NOW slave only (no WiFi)</option>
+    <option value="4">STANDALONE — local patterns, no network</option>
+  </select>
+  <div class="pin-note">Change takes effect after reboot. MESH channel is compile-time (config.h).</div>
+</div>
+
 <h2>Output</h2>
 <div class="card">
   <label>Brightness <span id="bri-val"></span></label>
@@ -86,6 +99,7 @@ async function loadConfig() {
   document.getElementById('ssid').value = cfg.ssid;
   document.getElementById('pass').value = cfg.password;
   document.getElementById('hostname').value = cfg.hostname;
+  document.getElementById('node_mode').value = cfg.node_mode ?? 0;
 
   const bri = document.getElementById('brightness');
   bri.value = cfg.brightness;
@@ -116,6 +130,7 @@ document.getElementById('save-btn').addEventListener('click', async () => {
     password: document.getElementById('pass').value,
     hostname: document.getElementById('hostname').value,
     brightness: parseInt(document.getElementById('brightness').value),
+    node_mode:  parseInt(document.getElementById('node_mode').value),
     strips: cfg.strips.map((s, i) => ({
       num_leds:       parseInt(document.getElementById(`s${i}_leds`).value),
       start_universe: parseInt(document.getElementById(`s${i}_uni`).value),
@@ -167,6 +182,7 @@ void WebConfig::serveConfig() {
     doc["password"]   = _cfg.password;
     doc["hostname"]   = _cfg.hostname;
     doc["brightness"] = _cfg.brightness;
+    doc["node_mode"]  = (uint8_t)_cfg.node_mode;
 
     JsonArray strips = doc["strips"].to<JsonArray>();
     for (int i = 0; i < NUM_STRIPS; i++) {
@@ -198,6 +214,9 @@ void WebConfig::handleSaveConfig() {
     strlcpy(_cfg.password, doc["password"] | _cfg.password, sizeof(_cfg.password));
     strlcpy(_cfg.hostname, doc["hostname"] | _cfg.hostname, sizeof(_cfg.hostname));
     _cfg.brightness = doc["brightness"] | _cfg.brightness;
+    if (doc["node_mode"].is<uint8_t>()) {
+        _cfg.node_mode = (NodeMode)(uint8_t)doc["node_mode"];
+    }
 
     JsonArray strips = doc["strips"];
     for (int i = 0; i < NUM_STRIPS && i < (int)strips.size(); i++) {

@@ -25,3 +25,16 @@ static const StripConfig STRIPS[NUM_STRIPS] = {
 // FastLED color order — change per strip type (WS2812B = GRB, APA102 = BGR, etc.)
 #define COLOR_ORDER GRB
 #define LED_TYPE    WS2812B
+
+// ---- Mesh / mode settings ----
+
+// WiFi channel used for ESP-NOW in MESH/BRIDGE modes.
+// Must match your router's channel when using BRIDGE mode.
+// Run: iw dev wlan0 info | grep channel   (on the machine connected to your AP)
+#define MESH_CHANNEL 6
+
+// How long to wait for WiFi before falling back to mesh-only mode (ms)
+#define WIFI_TIMEOUT_MS 10000
+
+// How long without a DMX/ESP-NOW frame before switching to local patterns (ms)
+#define IDLE_TIMEOUT_MS 5000

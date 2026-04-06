@@ -9,7 +9,8 @@ void loadConfig(RuntimeConfig& cfg) {
     strlcpy(cfg.ssid,     prefs.getString("ssid",     WIFI_SSID).c_str(),     sizeof(cfg.ssid));
     strlcpy(cfg.password, prefs.getString("pass",     WIFI_PASSWORD).c_str(), sizeof(cfg.password));
     strlcpy(cfg.hostname, prefs.getString("hostname", "artnode").c_str(),      sizeof(cfg.hostname));
-    cfg.brightness = prefs.getUChar("brightness", 200);
+    cfg.brightness  = prefs.getUChar("brightness", 200);
+    cfg.node_mode   = (NodeMode)prefs.getUChar("node_mode", (uint8_t)NodeMode::AUTO);
 
     for (int i = 0; i < NUM_STRIPS; i++) {
         char key[16];
@@ -33,6 +34,7 @@ void saveConfig(const RuntimeConfig& cfg) {
     prefs.putString("pass",       cfg.password);
     prefs.putString("hostname",   cfg.hostname);
     prefs.putUChar("brightness",  cfg.brightness);
+    prefs.putUChar("node_mode",   (uint8_t)cfg.node_mode);
 
     for (int i = 0; i < NUM_STRIPS; i++) {
         char key[16];
