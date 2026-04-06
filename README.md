@@ -143,6 +143,69 @@ Once the node is on the network, open `http://artnode.local` in a browser:
 
 Settings are saved to ESP32 NVS (non-volatile storage) and survive reboots. Saving via the web UI triggers an automatic reboot to apply changes.
 
+## Resolution Multiplying
+
+Placing multiple strips (or a single folded strip) at sub-pitch offsets increases effective spatial density without changing the LED hardware. Three modes are supported, configured per-strip in `config.h`.
+
+### FOLD_2X — single strip folded back on itself
+
+The strip runs forward to the end, then folds back and runs alongside itself in the opposite direction. LEDs interleave: the first pass covers even physical positions, the return pass covers odd positions.
+
+Art-Net addresses all `num_leds` virtual pixels linearly. The remap interleaves them across the fold:
+
+```
+virtual: 0  1  2  3  4  5  6  7
+         ↓  ↓  ↓  ↓  ↓  ↓  ↓  ↓
+physical:0  7  1  6  2  5  3  4   ← positions (2× density)
+```
+
+Config (one strip, 120 LEDs, folded to 60 physical positions):
+```c
+{ .pin=16, .num_leds=120, .start_universe=0, .channel_offset=0,
+  .res_mode=ResMode::FOLD_2X }
+```
+
+### PARALLEL_2X — two strips at ½-pitch offset
+
+Two physical strips are mounted side by side, the second offset by half the LED pitch. Art-Net sends `num_leds × 2` virtual pixels. Even pixels go to the primary strip, odd pixels go to the secondary.
+
+```
+virtual: 0  1  2  3  4  5  6  7
+         ↓     ↓     ↓     ↓        → strip A (pin 16)
+            ↓     ↓     ↓     ↓     → strip B (pin 17)
+```
+
+Config:
+```c
+// Primary — receives Art-Net, drives even virtual pixels to its own LEDs
+{ .pin=16, .num_leds=60, .start_universe=0, .channel_offset=0,
+  .res_mode=ResMode::PARALLEL_2X, .res_partner={1, 0xFF} },
+// Secondary — populated by primary's remap; no universe assignment needed
+{ .pin=17, .num_leds=60, .start_universe=0, .channel_offset=0,
+  .res_mode=ResMode::SECONDARY },
+```
+
+### PARALLEL_3X — three strips at ⅓-pitch offset
+
+Same idea with three strips. Art-Net sends `num_leds × 3` virtual pixels. Pixels are distributed by `v % 3`: primary / partner[0] / partner[1].
+
+Config:
+```c
+{ .pin=16, .num_leds=40, .start_universe=0, .channel_offset=0,
+  .res_mode=ResMode::PARALLEL_3X, .res_partner={1, 2} },
+{ .pin=17, .num_leds=40, .start_universe=0, .channel_offset=0,
+  .res_mode=ResMode::SECONDARY },
+{ .pin=18, .num_leds=40, .start_universe=0, .channel_offset=0,
+  .res_mode=ResMode::SECONDARY },
+```
+
+### Constraints
+
+- `num_leds` is the **physical** count per strip.
+- Art-Net addressing uses the **virtual** count (`num_leds × factor`).
+- Virtual count must fit in `MAX_LEDS_PER_STRIP` (512): PARALLEL_2X → `num_leds ≤ 256`, PARALLEL_3X → `num_leds ≤ 170`.
+- SECONDARY strips cannot be independently addressed or animated while a primary is active.
+
 ## Art-Net Mapping
 
 Art-Net universes contain 512 DMX channels. Each RGB LED consumes 3 channels, so one universe holds up to 170 LEDs.
