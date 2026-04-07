@@ -35,16 +35,19 @@ static void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uin
     webConfigCountFrame();
     statusLed.setState(NodeState::DMX_ACTIVE);
     lastFrameMs = millis();
+
+    // Broadcast first — FastLED.show() disables interrupts (WiFi/ESP-NOW) for the
+    // entire LED transmission, so we must not call it before sending the mesh packet.
+    if (activeMode == NodeMode::BRIDGE || activeMode == NodeMode::AUTO) {
+        mesh.broadcastUniverse((uint8_t)universe, data, length);
+    }
+
     leds.handleUniverse((uint8_t)universe, data, length, cfg);
     leds.show();
 #if ENABLE_HUB75
     hub75.handleUniverse((uint8_t)universe, data, length);
     hub75.show();
 #endif
-
-    if (activeMode == NodeMode::BRIDGE || activeMode == NodeMode::AUTO) {
-        mesh.broadcastUniverse((uint8_t)universe, data, length);
-    }
 }
 
 static void initWifi() {

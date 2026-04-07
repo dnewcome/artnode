@@ -13,6 +13,7 @@ Nodes can operate standalone, as a mesh bridge, or as a pure mesh slave — no c
 - **Five operating modes** — AUTO, BRIDGE, DIRECT, MESH, STANDALONE (see below)
 - **Pattern engine** — built-in animations run automatically when no DMX signal is present
 - **Spatial mapping** — multiple nodes spread in physical space share a virtual canvas; patterns render as a single coherent image across the installation
+- **HUB75 matrix panels** — drive 64×32 / 64×64 RGB matrix panels via DMA alongside (or instead of) LED strips
 - Runtime configuration via a built-in web UI — no reflash needed for most changes
 - OTA firmware updates over the network
 - mDNS hostname (`artnode.local` by default)
@@ -30,15 +31,16 @@ Any ESP32 board works. Pin assignments for LED strips are set at compile time du
 
 ```
 src/
-  config.h               Compile-time defaults: pins, strip layout, LED type, mesh channel, spatial defaults
-  runtime_config.h/cpp   NVS-backed runtime config: WiFi, brightness, node mode, strip layout, spatial position
-  led_controller.h/cpp   FastLED output, Art-Net universe → strip mapping
-  espnow_mesh.h/cpp      ESP-NOW transport: DMX broadcast/reassembly, pattern sync packets
-  pattern_engine.h/cpp   Local animations: rainbow, chase, pulse, twinkle, solid, plasma (spatial)
-  status_led.h/cpp       Non-blocking status LED blink state machine
-  web_config.h/cpp       HTTP server: config UI and REST API
-  main.cpp               Mode-based init, Art-Net callback, main loop
-platformio.ini           Build environments (USB and OTA)
+  config.h                Compile-time defaults: pins, strip layout, LED type, mesh channel, HUB75, spatial
+  runtime_config.h/cpp    NVS-backed runtime config: WiFi, brightness, node mode, strip layout, spatial position
+  led_controller.h/cpp    FastLED output, Art-Net universe → strip mapping, resolution multiplying
+  hub75_controller.h/cpp  HUB75 matrix panel output via DMA (compiled in when ENABLE_HUB75=1)
+  espnow_mesh.h/cpp       ESP-NOW transport: DMX broadcast/reassembly, pattern sync packets
+  pattern_engine.h/cpp    Local animations: off, solid, rainbow, chase, pulse, twinkle, plasma
+  status_led.h/cpp        Non-blocking status LED blink state machine
+  web_config.h/cpp        HTTP server: config UI and REST API
+  main.cpp                Mode-based init, Art-Net callback, main loop
+platformio.ini            Build environments (USB and OTA)
 ```
 
 ## Operating Modes
@@ -232,6 +234,10 @@ These must be set before the first flash. Most can be overridden at runtime afte
 | `WIFI_TIMEOUT_MS` | How long AUTO mode waits for WiFi before falling back (default 10s) |
 | `IDLE_TIMEOUT_MS` | Seconds without DMX before pattern engine activates (default 5s) |
 | `DEFAULT_SPATIAL` | Default spatial config (disabled by default; `virt_w=0`) |
+| `ENABLE_HUB75` | Set to `1` to enable HUB75 panel output (default `0`) |
+| `HUB75_W` / `HUB75_H` | Panel pixel dimensions (default 64×32) |
+| `HUB75_CHAIN` | Number of panels daisy-chained (default 1) |
+| `HUB75_START_UNIVERSE` | First Art-Net universe for panel pixel data (default 0) |
 
 **Strip pin numbers are compile-time only** — this is a FastLED constraint where the data pin is a C++ template parameter. If you change strip pins, update both `config.h` and the `FastLED.addLeds<>` calls in `led_controller.cpp`, then reflash.
 
@@ -382,14 +388,15 @@ The web UI is backed by a small JSON API that can also be used directly:
     "origin_x": 0.0,
     "origin_y": 128.0,
     "step_x": 1.07,
-    "step_y": 0.0
+    "step_y": 0.0,
+    "panel_w": 0
   }
 }
 ```
 
 `node_mode` values: `0`=AUTO, `1`=BRIDGE, `2`=DIRECT, `3`=MESH, `4`=STANDALONE
 
-Set `spatial.virt_w = 0` to disable spatial mapping.
+Set `spatial.virt_w = 0` to disable spatial mapping. `panel_w` is set automatically when `ENABLE_HUB75` is active and does not need to be configured manually.
 
 **POST `/api/config`** — save config and reboot (password field is write-only; omit to keep existing)
 
