@@ -24,6 +24,14 @@ void loadConfig(RuntimeConfig& cfg) {
         cfg.strips[i].channel_offset = prefs.getUShort(key, STRIPS[i].channel_offset);
     }
 
+    cfg.spatial.virt_w   = prefs.getUShort("sp_w",  DEFAULT_SPATIAL.virt_w);
+    cfg.spatial.virt_h   = prefs.getUShort("sp_h",  DEFAULT_SPATIAL.virt_h);
+    cfg.spatial.origin_x = prefs.getFloat("sp_ox", DEFAULT_SPATIAL.origin_x);
+    cfg.spatial.origin_y = prefs.getFloat("sp_oy", DEFAULT_SPATIAL.origin_y);
+    cfg.spatial.step_x   = prefs.getFloat("sp_sx", DEFAULT_SPATIAL.step_x);
+    cfg.spatial.step_y   = prefs.getFloat("sp_sy", DEFAULT_SPATIAL.step_y);
+    cfg.spatial.panel_w  = prefs.getUShort("sp_pw", DEFAULT_SPATIAL.panel_w);
+
     prefs.end();
 }
 
@@ -47,6 +55,14 @@ void saveConfig(const RuntimeConfig& cfg) {
         snprintf(key, sizeof(key), "s%d_off", i);
         prefs.putUShort(key, cfg.strips[i].channel_offset);
     }
+
+    prefs.putUShort("sp_w",  cfg.spatial.virt_w);
+    prefs.putUShort("sp_h",  cfg.spatial.virt_h);
+    prefs.putFloat("sp_ox",  cfg.spatial.origin_x);
+    prefs.putFloat("sp_oy",  cfg.spatial.origin_y);
+    prefs.putFloat("sp_sx",  cfg.spatial.step_x);
+    prefs.putFloat("sp_sy",  cfg.spatial.step_y);
+    prefs.putUShort("sp_pw", cfg.spatial.panel_w);
 
     prefs.end();
 }

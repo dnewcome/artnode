@@ -59,9 +59,29 @@ void EspNowMesh::broadcastUniverse(uint8_t universe, uint8_t* data, uint16_t len
     }
 }
 
+void EspNowMesh::broadcastPattern(uint8_t pattern, uint8_t p1, uint8_t p2, uint32_t frame_t) {
+    static const uint8_t broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    MeshPatternPacket pkt;
+    pkt.magic   = MESH_MAGIC;
+    pkt.type    = MESH_PKT_PATTERN;
+    pkt.pattern = pattern;
+    pkt.param1  = p1;
+    pkt.param2  = p2;
+    pkt.frame_t = frame_t;
+    esp_now_send(broadcast, (uint8_t*)&pkt, sizeof(pkt));
+}
+
 void EspNowMesh::_onReceive(const uint8_t* raw, int len) {
     if (len < 2) return;
     if (raw[0] != MESH_MAGIC) return;
+
+    if (raw[1] == MESH_PKT_PATTERN) {
+        if (len < (int)sizeof(MeshPatternPacket)) return;
+        const MeshPatternPacket* pkt = reinterpret_cast<const MeshPatternPacket*>(raw);
+        if (_patternCb) _patternCb(pkt->pattern, pkt->param1, pkt->param2, pkt->frame_t);
+        return;
+    }
+
     if (raw[1] != MESH_PKT_DMX) return;
     if (len < (int)sizeof(MeshDmxPacket)) return;
 

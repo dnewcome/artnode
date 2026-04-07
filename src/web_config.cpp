@@ -73,6 +73,31 @@ static const char INDEX_HTML[] PROGMEM = R"rawlit(<!DOCTYPE html>
   <div id="strips"></div>
 </div>
 
+<h2>Spatial mapping</h2>
+<div class="card">
+  <div class="pin-note" style="margin-bottom:.6rem">
+    Place this node in a shared virtual canvas. All nodes running the same pattern
+    will produce a coherent image across physical space. Set canvas width to 0 to
+    disable (each strip runs patterns linearly).
+  </div>
+  <div class="strip-row">
+    <div><label>Canvas W</label><input type="number" id="sp_w" min="0" max="65535"></div>
+    <div><label>Canvas H</label><input type="number" id="sp_h" min="1" max="65535"></div>
+  </div>
+  <div class="strip-row">
+    <div><label>Origin X</label><input type="number" id="sp_ox" step="0.01"></div>
+    <div><label>Origin Y</label><input type="number" id="sp_oy" step="0.01"></div>
+  </div>
+  <div class="strip-row">
+    <div><label>Step X / LED</label><input type="number" id="sp_sx" step="0.01"></div>
+    <div><label>Step Y / LED</label><input type="number" id="sp_sy" step="0.01"></div>
+  </div>
+  <div class="pin-note">
+    Example: 4 nodes × 60 LEDs across a 256-wide canvas, all at Y=128<br>
+    node 0: origin 0,128 · step 1.07,0 &nbsp; node 1: 64,128 · step 1.07,0 &hellip;
+  </div>
+</div>
+
 <button id="save-btn">Save &amp; Reboot</button>
 <div id="save-msg">Saved. Rebooting&hellip;</div>
 
@@ -100,6 +125,13 @@ async function loadConfig() {
   document.getElementById('pass').value = cfg.password;
   document.getElementById('hostname').value = cfg.hostname;
   document.getElementById('node_mode').value = cfg.node_mode ?? 0;
+
+  document.getElementById('sp_w').value  = cfg.spatial?.virt_w   ?? 0;
+  document.getElementById('sp_h').value  = cfg.spatial?.virt_h   ?? 256;
+  document.getElementById('sp_ox').value = cfg.spatial?.origin_x ?? 0;
+  document.getElementById('sp_oy').value = cfg.spatial?.origin_y ?? 128;
+  document.getElementById('sp_sx').value = cfg.spatial?.step_x   ?? 1;
+  document.getElementById('sp_sy').value = cfg.spatial?.step_y   ?? 0;
 
   const bri = document.getElementById('brightness');
   bri.value = cfg.brightness;
@@ -135,7 +167,15 @@ document.getElementById('save-btn').addEventListener('click', async () => {
       num_leds:       parseInt(document.getElementById(`s${i}_leds`).value),
       start_universe: parseInt(document.getElementById(`s${i}_uni`).value),
       channel_offset: parseInt(document.getElementById(`s${i}_off`).value),
-    }))
+    })),
+    spatial: {
+      virt_w:   parseInt(document.getElementById('sp_w').value),
+      virt_h:   parseInt(document.getElementById('sp_h').value),
+      origin_x: parseFloat(document.getElementById('sp_ox').value),
+      origin_y: parseFloat(document.getElementById('sp_oy').value),
+      step_x:   parseFloat(document.getElementById('sp_sx').value),
+      step_y:   parseFloat(document.getElementById('sp_sy').value),
+    }
   };
   await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
   document.getElementById('save-msg').style.display = 'block';
@@ -193,6 +233,14 @@ void WebConfig::serveConfig() {
         s["pin"]            = STRIPS[i].pin;   // read-only, compile-time
     }
 
+    JsonObject sp    = doc["spatial"].to<JsonObject>();
+    sp["virt_w"]   = _cfg.spatial.virt_w;
+    sp["virt_h"]   = _cfg.spatial.virt_h;
+    sp["origin_x"] = _cfg.spatial.origin_x;
+    sp["origin_y"] = _cfg.spatial.origin_y;
+    sp["step_x"]   = _cfg.spatial.step_x;
+    sp["step_y"]   = _cfg.spatial.step_y;
+
     String out;
     serializeJson(doc, out);
     _server.send(200, "application/json", out);
@@ -223,6 +271,16 @@ void WebConfig::handleSaveConfig() {
         _cfg.strips[i].num_leds       = strips[i]["num_leds"]       | _cfg.strips[i].num_leds;
         _cfg.strips[i].start_universe = strips[i]["start_universe"] | _cfg.strips[i].start_universe;
         _cfg.strips[i].channel_offset = strips[i]["channel_offset"] | _cfg.strips[i].channel_offset;
+    }
+
+    if (doc["spatial"].is<JsonObject>()) {
+        JsonObject sp = doc["spatial"];
+        if (sp["virt_w"].is<uint16_t>())  _cfg.spatial.virt_w   = sp["virt_w"];
+        if (sp["virt_h"].is<uint16_t>())  _cfg.spatial.virt_h   = sp["virt_h"];
+        if (sp["origin_x"].is<float>())   _cfg.spatial.origin_x = sp["origin_x"];
+        if (sp["origin_y"].is<float>())   _cfg.spatial.origin_y = sp["origin_y"];
+        if (sp["step_x"].is<float>())     _cfg.spatial.step_x   = sp["step_x"];
+        if (sp["step_y"].is<float>())     _cfg.spatial.step_y   = sp["step_y"];
     }
 
     saveConfig(_cfg);

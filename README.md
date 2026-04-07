@@ -12,6 +12,7 @@ Nodes can operate standalone, as a mesh bridge, or as a pure mesh slave — no c
 - **ESP-NOW mesh** — bridge nodes rebroadcast universe data to slave nodes with no router or IP management
 - **Five operating modes** — AUTO, BRIDGE, DIRECT, MESH, STANDALONE (see below)
 - **Pattern engine** — built-in animations run automatically when no DMX signal is present
+- **Spatial mapping** — multiple nodes spread in physical space share a virtual canvas; patterns render as a single coherent image across the installation
 - Runtime configuration via a built-in web UI — no reflash needed for most changes
 - OTA firmware updates over the network
 - mDNS hostname (`artnode.local` by default)
@@ -29,11 +30,11 @@ Any ESP32 board works. Pin assignments for LED strips are set at compile time du
 
 ```
 src/
-  config.h               Compile-time defaults: pins, strip layout, LED type, mesh channel
-  runtime_config.h/cpp   NVS-backed runtime config: WiFi, brightness, node mode, strip layout
+  config.h               Compile-time defaults: pins, strip layout, LED type, mesh channel, spatial defaults
+  runtime_config.h/cpp   NVS-backed runtime config: WiFi, brightness, node mode, strip layout, spatial position
   led_controller.h/cpp   FastLED output, Art-Net universe → strip mapping
-  espnow_mesh.h/cpp      ESP-NOW transport: broadcast, fragment, reassemble
-  pattern_engine.h/cpp   Local animations: rainbow, chase, pulse, twinkle, solid
+  espnow_mesh.h/cpp      ESP-NOW transport: DMX broadcast/reassembly, pattern sync packets
+  pattern_engine.h/cpp   Local animations: rainbow, chase, pulse, twinkle, solid, plasma (spatial)
   status_led.h/cpp       Non-blocking status LED blink state machine
   web_config.h/cpp       HTTP server: config UI and REST API
   main.cpp               Mode-based init, Art-Net callback, main loop
@@ -70,6 +71,8 @@ In all WiFi-connected modes (AUTO/BRIDGE/DIRECT), if no DMX frames arrive for 5 
 
 Art-Net universes are 512 bytes; ESP-NOW packets are capped at 250 bytes. The bridge fragments each universe into up to three 240-byte packets and slaves reassemble them before passing to the LED controller. Single-fragment sends (strips ≤ 80 LEDs per universe) take the fast path with no reassembly overhead.
 
+In addition to DMX frames, the bridge broadcasts a small **pattern sync packet** every 500 ms when the pattern engine is active. This packet carries the current pattern, parameters, and a frame counter so all nodes stay temporally aligned and spatial patterns remain coherent across the installation.
+
 **Channel configuration:** ESP-NOW must operate on the same WiFi channel as the AP when in BRIDGE mode. Set `MESH_CHANNEL` in `config.h` to match your router's channel:
 
 ```bash
@@ -81,16 +84,115 @@ MESH-only nodes (no WiFi) set their radio channel to `MESH_CHANNEL` at boot.
 
 ## Pattern Engine
 
-When no DMX signal is present, the pattern engine runs locally. The default pattern is **RAINBOW**. Patterns are selected programmatically via `patterns.setPattern()` in `main.cpp` — configurable via the REST API in a future update.
+When no DMX signal is present, the pattern engine runs locally at ~30 fps. The default pattern is **RAINBOW**. In BRIDGE mode, the bridge also broadcasts pattern state over ESP-NOW so all mesh slaves run the same animation in sync.
+
+When [spatial mapping](#spatial-mapping) is configured, patterns address each LED by its position in the shared virtual canvas rather than by strip index, producing a single coherent image across physically distributed nodes.
 
 | Pattern | Description | param1 | param2 |
 |---|---|---|---|
 | `OFF` | All LEDs off | — | — |
 | `SOLID` | Single color | hue (0–255) | saturation (0–255) |
-| `RAINBOW` | Moving rainbow | speed | — |
-| `CHASE` | Dot with tail | hue | speed |
-| `PULSE` | Breathing color | hue | speed |
-| `TWINKLE` | Random sparkle | hue (0=random) | density |
+| `RAINBOW` | Moving rainbow sweeping across virtual X axis | speed | — |
+| `CHASE` | Dot with tail moving across virtual X axis | hue | speed |
+| `PULSE` | Breathing color (spatial-independent) | hue | speed |
+| `TWINKLE` | Random sparkle (spatial-independent) | hue (0=random) | density |
+| `PLASMA` | 2D sine interference field; best with spatial mapping | hue offset | speed |
+
+## Spatial Mapping
+
+Multiple nodes spread in physical space can be configured to share a virtual canvas so that patterns render as a single image across the installation. Each node knows its position in the canvas and independently samples the correct slice of the pattern — no per-pixel data is transmitted.
+
+### How it works
+
+The virtual canvas has configurable dimensions (`virt_w × virt_h`, in arbitrary units). Each node's strip is placed in the canvas by an origin point and a per-LED step vector:
+
+```
+virtual LED position for LED i:
+    vx = origin_x + i × step_x
+    vy = origin_y + i × step_y
+```
+
+Pattern functions use `vx` (and `vy` for 2D patterns like PLASMA) instead of the raw strip index. All nodes run the same pattern with the same time counter (kept in sync by the bridge), so the result is a spatially and temporally coherent display.
+
+When `virt_w = 0` spatial mapping is disabled and patterns fall back to linear strip-index addressing.
+
+### Configuration
+
+Spatial settings are persisted to NVS and configurable from the web UI under **Spatial mapping**.
+
+| Field | Description |
+|---|---|
+| **Canvas W** | Virtual canvas width (`virt_w`). Set to `0` to disable. |
+| **Canvas H** | Virtual canvas height (`virt_h`). |
+| **Origin X / Y** | Position of LED[0] in the virtual canvas. |
+| **Step X / Y** | Virtual coordinate advance per LED. Negative values run the strip backwards. |
+
+### Example — four nodes across a horizontal installation
+
+Four nodes, each with 60 LEDs, evenly distributed across a 256-unit-wide canvas at mid-height:
+
+| Node | origin_x | origin_y | step_x | step_y |
+|---|---|---|---|---|
+| 0 | 0 | 128 | 1.07 | 0 |
+| 1 | 64 | 128 | 1.07 | 0 |
+| 2 | 128 | 128 | 1.07 | 0 |
+| 3 | 192 | 128 | 1.07 | 0 |
+
+`step_x = 256 / (4 × 60) = 1.07` — each LED advances by one sixty-fourth of its quarter of the canvas.
+
+A RAINBOW or PLASMA pattern running on all four nodes with this config will appear as a single continuous animation across the physical space.
+
+### Vertical and diagonal strips
+
+A strip running vertically in the canvas:
+```
+origin_x=128, origin_y=0, step_x=0, step_y=4.27
+```
+
+A strip running at 45°:
+```
+origin_x=0, origin_y=0, step_x=2.0, step_y=2.0
+```
+
+## HUB75 RGB Matrix Panels
+
+In addition to LED strips, artnode can drive HUB75 RGB matrix panels (e.g. 64×32 or 64×64 scoreboards) using the [ESP32-HUB75-MatrixPanel-DMA](https://github.com/mrfaptastic/ESP32-HUB75-MatrixPanel-DMA) library. HUB75 output works alongside strip output — both can be active simultaneously.
+
+### Enabling HUB75
+
+Set `ENABLE_HUB75` to `1` in `config.h` and configure the panel dimensions:
+
+```c
+#define ENABLE_HUB75        1
+#define HUB75_W             64   // panel pixel width
+#define HUB75_H             32   // panel pixel height
+#define HUB75_CHAIN         1    // panels daisy-chained
+#define HUB75_START_UNIVERSE 0   // first Art-Net universe for panel data
+```
+
+### Pin wiring
+
+HUB75 uses a dedicated parallel interface. Default pin mapping (matches most HUB75 breakout boards and the ESP32 Trinity):
+
+| Signal | GPIO |
+|---|---|
+| R1, G1, B1 | 25, 26, 27 |
+| R2, G2, B2 | 14, 12, 13 |
+| A, B, C, D | 23, 22, 5, 17 |
+| E (64-row panels only) | 18 |
+| CLK, LAT, OE | 16, 4, 15 |
+
+> **Pin conflict:** default CLK (16) and D (17) overlap with the default strip pins. Either rewire your strips or set `NUM_STRIPS 0` when using a panel as the primary output. Override pins in `hub75_controller.cpp` inside `begin()` via the `mxconfig.gpio` struct.
+
+### Art-Net mapping
+
+Panel pixels are addressed in row-major order from `HUB75_START_UNIVERSE`. Each 512-byte universe carries 170 pixels (170 × 3 = 510 bytes). A 64×32 panel = 2048 pixels = 12 universes (0–11).
+
+### Pattern engine
+
+When HUB75 is enabled, the spatial config is automatically set to **panel mode**: pixel `i` maps to column `i % HUB75_W`, row `i / HUB75_W`. All patterns use true 2D coordinates, which makes PLASMA especially effective.
+
+The bridge also broadcasts pattern sync packets so mesh slave nodes running panels stay temporally aligned.
 
 ## Building and Flashing
 
@@ -129,6 +231,7 @@ These must be set before the first flash. Most can be overridden at runtime afte
 | `MESH_CHANNEL` | WiFi channel for ESP-NOW (must match AP channel in BRIDGE mode) |
 | `WIFI_TIMEOUT_MS` | How long AUTO mode waits for WiFi before falling back (default 10s) |
 | `IDLE_TIMEOUT_MS` | Seconds without DMX before pattern engine activates (default 5s) |
+| `DEFAULT_SPATIAL` | Default spatial config (disabled by default; `virt_w=0`) |
 
 **Strip pin numbers are compile-time only** — this is a FastLED constraint where the data pin is a C++ template parameter. If you change strip pins, update both `config.h` and the `FastLED.addLeds<>` calls in `led_controller.cpp`, then reflash.
 
@@ -140,6 +243,7 @@ Once the node is on the network, open `http://artnode.local` in a browser:
 - WiFi SSID, password, hostname
 - Brightness (0–255)
 - Per-strip: LED count, starting universe, channel offset
+- Spatial mapping: canvas dimensions, strip origin, and step vector
 
 Settings are saved to ESP32 NVS (non-volatile storage) and survive reboots. Saving via the web UI triggers an automatic reboot to apply changes.
 
@@ -254,6 +358,7 @@ Served at `http://artnode.local` (or the node's IP address).
 - Edit WiFi credentials and hostname
 - Adjust brightness
 - Edit per-strip LED count, universe, and channel offset
+- Configure spatial mapping: virtual canvas size, strip origin, and step vector per LED
 - Save triggers a reboot; changes take effect on next boot
 
 ## REST API
@@ -270,11 +375,21 @@ The web UI is backed by a small JSON API that can also be used directly:
   "strips": [
     { "pin": 16, "num_leds": 60, "start_universe": 0, "channel_offset": 0 },
     { "pin": 17, "num_leds": 60, "start_universe": 1, "channel_offset": 0 }
-  ]
+  ],
+  "spatial": {
+    "virt_w": 256,
+    "virt_h": 256,
+    "origin_x": 0.0,
+    "origin_y": 128.0,
+    "step_x": 1.07,
+    "step_y": 0.0
+  }
 }
 ```
 
 `node_mode` values: `0`=AUTO, `1`=BRIDGE, `2`=DIRECT, `3`=MESH, `4`=STANDALONE
+
+Set `spatial.virt_w = 0` to disable spatial mapping.
 
 **POST `/api/config`** — save config and reboot (password field is write-only; omit to keep existing)
 
@@ -295,6 +410,7 @@ The web UI is backed by a small JSON API that can also be used directly:
 | [FastLED](https://github.com/FastLED/FastLED) | LED strip output |
 | [ArtnetWifi](https://github.com/rstephan/ArtnetWifi) | Art-Net UDP receiver |
 | [ArduinoJson](https://arduinojson.org/) | JSON config serialization |
+| [ESP32-HUB75-MatrixPanel-DMA](https://github.com/mrfaptastic/ESP32-HUB75-MatrixPanel-DMA) | HUB75 RGB matrix panel output (optional) |
 | ESP32 Arduino core (built-in) | WiFi, WebServer, mDNS, OTA, NVS Preferences, ESP-NOW |
 
 ## Adding More Strips

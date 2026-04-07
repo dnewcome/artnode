@@ -10,10 +10,14 @@
 #include "web_config.h"
 #include "espnow_mesh.h"
 #include "pattern_engine.h"
+#include "hub75_controller.h"
 
 // ---- Global objects ----
 RuntimeConfig  cfg;
 LedController  leds;
+#if ENABLE_HUB75
+Hub75Controller hub75;
+#endif
 StatusLed      statusLed;
 ArtnetWifi     artnet;
 EspNowMesh     mesh;
@@ -33,6 +37,10 @@ static void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uin
     lastFrameMs = millis();
     leds.handleUniverse((uint8_t)universe, data, length, cfg);
     leds.show();
+#if ENABLE_HUB75
+    hub75.handleUniverse((uint8_t)universe, data, length);
+    hub75.show();
+#endif
 
     if (activeMode == NodeMode::BRIDGE || activeMode == NodeMode::AUTO) {
         mesh.broadcastUniverse((uint8_t)universe, data, length);
@@ -84,6 +92,14 @@ void setup() {
 
     loadConfig(cfg);
     leds.begin(cfg);
+#if ENABLE_HUB75
+    // For HUB75 panels, override spatial to panel mode so patterns render in 2D.
+    cfg.spatial.panel_w = HUB75_W * HUB75_CHAIN;
+    cfg.spatial.virt_w  = HUB75_W * HUB75_CHAIN;
+    cfg.spatial.virt_h  = HUB75_H;
+    hub75.begin(cfg);
+#endif
+    patterns.setSpatial(cfg.spatial);
 
     NodeMode requestedMode = cfg.node_mode;
 
@@ -107,6 +123,15 @@ void setup() {
             statusLed.setState(NodeState::DMX_ACTIVE);
             leds.handleUniverse(universe, data, len, cfg);
             leds.show();
+#if ENABLE_HUB75
+            hub75.handleUniverse(universe, data, len);
+            hub75.show();
+#endif
+        });
+        mesh.onPattern([](uint8_t p, uint8_t p1, uint8_t p2, uint32_t t) {
+            // Adopt bridge's pattern + time so spatial patterns stay in sync
+            patterns.setPattern((Pattern)p, p1, p2);
+            patterns.setTime(t);
         });
         statusLed.setState(NodeState::WIFI_CONNECTED);
         return;
@@ -134,6 +159,14 @@ void setup() {
                 statusLed.setState(NodeState::DMX_ACTIVE);
                 leds.handleUniverse(universe, data, len, cfg);
                 leds.show();
+#if ENABLE_HUB75
+                hub75.handleUniverse(universe, data, len);
+                hub75.show();
+#endif
+            });
+            mesh.onPattern([](uint8_t p, uint8_t p1, uint8_t p2, uint32_t t) {
+                patterns.setPattern((Pattern)p, p1, p2);
+                patterns.setTime(t);
             });
             statusLed.setState(NodeState::WIFI_CONNECTED);
         } else {
@@ -180,6 +213,25 @@ void loop() {
         for (int i = 0; i < NUM_STRIPS; i++) {
             if (patterns.tick(leds.getLeds(i), cfg.strips[i].num_leds)) {
                 leds.show();
+            }
+        }
+#if ENABLE_HUB75
+        if (patterns.tick(hub75.getLeds(), HUB75_TOTAL_LEDS)) {
+            hub75.show();
+        }
+#endif
+
+        // Bridge: broadcast pattern state every 500 ms so mesh slaves stay in sync
+        if (activeMode == NodeMode::BRIDGE || activeMode == NodeMode::AUTO) {
+            static uint32_t lastSyncMs = 0;
+            if (millis() - lastSyncMs > 500) {
+                lastSyncMs = millis();
+                mesh.broadcastPattern(
+                    (uint8_t)patterns.getPattern(),
+                    patterns.getParam1(),
+                    patterns.getParam2(),
+                    patterns.getTime()
+                );
             }
         }
     }

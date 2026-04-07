@@ -23,6 +23,7 @@ struct RuntimeConfig {
     uint8_t  brightness;
     NodeMode node_mode;
     StripRuntime strips[NUM_STRIPS];
+    SpatialConfig spatial;
 };
 
 void loadConfig(RuntimeConfig& cfg);   // NVS → cfg, falls back to config.h defaults
