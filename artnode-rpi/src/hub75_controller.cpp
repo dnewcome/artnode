@@ -15,14 +15,14 @@ void Hub75Controller::begin(const RuntimeConfig& cfg) {
     options.parallel                 = 1;
     // brightness is 0-100 in rpi-rgb-led-matrix; scale from 0-255
     options.brightness               = (cfg.brightness * 100 + 127) / 255;
-    // snd_bcm2835 (Pi built-in audio) conflicts with the hardware PWM pulse.
-    // Disable hardware pulsing to avoid the conflict; slight flicker trade-off.
-    // To eliminate flicker entirely: blacklist snd_bcm2835 or add
-    // dtparam=audio=off to /boot/config.txt and reboot.
+    // snd_bcm2835 (Pi built-in audio) conflicts with the library's hardware PWM
+    // pulse.  Disable hardware pulsing to avoid the conflict at the cost of
+    // some flicker.  To eliminate flicker entirely, add dtparam=audio=off to
+    // /boot/config.txt (or blacklist snd_bcm2835) and set this to false.
     options.disable_hardware_pulsing = true;
 
     rgb_matrix::RuntimeOptions runtime_opt;
-    runtime_opt.gpio_slowdown  = HUB75_GPIO_SLOWDOWN;
+    runtime_opt.gpio_slowdown   = HUB75_GPIO_SLOWDOWN;
     runtime_opt.drop_privileges = 0;  // keep root for hardware access
 
     _matrix = rgb_matrix::RGBMatrix::CreateFromOptions(options, runtime_opt);
@@ -30,9 +30,8 @@ void Hub75Controller::begin(const RuntimeConfig& cfg) {
         fprintf(stderr, "[hub75] RGBMatrix::CreateFromOptions failed\n");
         return;
     }
-    fprintf(stderr, "[hub75] matrix OK  brightness=%d\n", options.brightness);
 
-    fprintf(stderr, "[hub75] ready (direct-draw mode)\n");
+    _canvas = _matrix->CreateFrameCanvas();
     memset(_buf, 0, sizeof(_buf));
 }
 
@@ -74,26 +73,15 @@ void Hub75Controller::writeBytes(uint32_t byte_offset, uint8_t* data, uint16_t l
 }
 
 void Hub75Controller::show() {
-    if (!_matrix) return;
+    if (!_canvas) return;
 
-    // Debug: log first call and sample pixel values
-    static int showCount = 0;
-    if (showCount < 3) {
-        fprintf(stderr, "[hub75] show() #%d  buf[0]=(%d,%d,%d)  buf[512]=(%d,%d,%d)\n",
-                showCount,
-                _buf[0].r, _buf[0].g, _buf[0].b,
-                _buf[512].r, _buf[512].g, _buf[512].b);
-        showCount++;
-    }
-
-    // Draw directly on the matrix canvas (no FrameCanvas double-buffering).
-    // Simpler path — eliminates SwapOnVSync as a potential failure point.
     int total_w = HUB75_W * HUB75_CHAIN;
     for (int i = 0; i < HUB75_TOTAL_LEDS; i++) {
         int x = i % total_w;
         int y = i / total_w;
-        _matrix->SetPixel(x, y, _buf[i].r, _buf[i].g, _buf[i].b);
+        _canvas->SetPixel(x, y, _buf[i].r, _buf[i].g, _buf[i].b);
     }
+    _canvas = _matrix->SwapOnVSync(_canvas);
 }
 
 #endif // ENABLE_HUB75

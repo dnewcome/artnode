@@ -24,6 +24,7 @@ public:
 private:
     CRGB                         _buf[HUB75_TOTAL_LEDS]{};
     rgb_matrix::RGBMatrix*       _matrix = nullptr;
+    rgb_matrix::FrameCanvas*     _canvas = nullptr;
 
     void writeBytes(uint32_t byte_offset, uint8_t* data, uint16_t len);
 };
