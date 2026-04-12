@@ -44,17 +44,23 @@ void Hub75Controller::handleUniverse(uint8_t universe, uint8_t* data, uint16_t l
 }
 
 void Hub75Controller::writeBytes(uint32_t byte_offset, uint8_t* data, uint16_t len) {
-    uint32_t led_start = byte_offset / 3;
-    uint32_t carry     = byte_offset % 3;  // partial pixel carry (uncommon)
+    // 512 % 3 == 2, so Art-Net universe boundaries almost never land on a pixel
+    // boundary.  Walk byte-by-byte, advancing led_idx and channel together so
+    // every incoming byte lands in the right colour channel regardless of alignment.
+    uint32_t led_idx = byte_offset / 3;
+    uint32_t channel = byte_offset % 3;
 
-    // Fast path: byte_offset is always 3-aligned in normal Art-Net usage
-    if (carry == 0) {
-        uint32_t n = std::min(static_cast<uint32_t>(len / 3),
-                              static_cast<uint32_t>(HUB75_TOTAL_LEDS) - led_start);
-        for (uint32_t i = 0; i < n; i++) {
-            _buf[led_start + i].r = data[i * 3];
-            _buf[led_start + i].g = data[i * 3 + 1];
-            _buf[led_start + i].b = data[i * 3 + 2];
+    if (led_idx >= static_cast<uint32_t>(HUB75_TOTAL_LEDS)) return;
+
+    for (uint16_t i = 0; i < len; i++) {
+        switch (channel) {
+            case 0: _buf[led_idx].r = data[i]; break;
+            case 1: _buf[led_idx].g = data[i]; break;
+            case 2: _buf[led_idx].b = data[i]; break;
+        }
+        if (++channel == 3) {
+            channel = 0;
+            if (++led_idx >= static_cast<uint32_t>(HUB75_TOTAL_LEDS)) return;
         }
     }
 }

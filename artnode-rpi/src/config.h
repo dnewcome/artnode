@@ -87,10 +87,14 @@ static const SpatialConfig DEFAULT_SPATIAL = {
 
 #if ENABLE_HUB75
 #define HUB75_W              64     // panel pixel width
-#define HUB75_H              32     // panel pixel height
+#define HUB75_H              64     // panel pixel height
 #define HUB75_CHAIN          1      // panels daisy-chained
 #define HUB75_START_UNIVERSE 0      // first Art-Net universe for panel
-#define HUB75_MAPPING        "regular"  // hardware pin mapping
+// Hardware mapping: "regular" for direct GPIO wiring,
+//                   "adafruit-hat" or "adafruit-hat-pwm" for Adafruit RGB Matrix HAT.
+// adafruit-hat-pwm is the same as adafruit-hat but uses a PWM signal for
+// the output enable line — produces better brightness uniformity.
+#define HUB75_MAPPING        "adafruit-hat"  // hardware pin mapping
 #define HUB75_GPIO_SLOWDOWN  2      // 1=RPi1, 2=RPi2/3/Zero2, 4=RPi4/5
 
 #define HUB75_TOTAL_LEDS (HUB75_W * HUB75_H * HUB75_CHAIN)
