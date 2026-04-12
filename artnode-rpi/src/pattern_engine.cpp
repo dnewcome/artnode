@@ -42,9 +42,14 @@ uint8_t PatternEngine::vy(uint16_t i, uint16_t n) const {
 
 bool PatternEngine::tick(CRGB* leds, uint16_t n) {
     uint32_t now = millis();
-    if (now - _last_ms < FRAME_MS) return false;
-    _last_ms = now;
-    _t++;
+    bool newFrame = (now - _last_ms >= FRAME_MS);
+    if (newFrame) {
+        _last_ms = now;
+        _t++;
+    }
+    // Always render to the caller's buffer — multiple outputs (strips + hub75)
+    // call tick() each loop; only the first returns true (rate gate), but all
+    // need fresh pixel data regardless of which fired the gate.
 
     switch (_pattern) {
         case Pattern::OFF: {
@@ -103,5 +108,5 @@ bool PatternEngine::tick(CRGB* leds, uint16_t n) {
             break;
         }
     }
-    return true;
+    return newFrame;
 }

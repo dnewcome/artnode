@@ -128,11 +128,9 @@ int main() {
 
         if (runPatterns) {
             std::lock_guard<std::mutex> lock(cfgMutex);
-            for (int i = 0; i < NUM_STRIPS; i++) {
-                if (patterns.tick(leds.getLeds(i), cfg.strips[i].num_leds)) {
-                    leds.show();
-                }
-            }
+            // HUB75 ticks first so it captures the frame-gate firing.
+            // tick() always renders to the buffer; returns true only once per
+            // FRAME_MS so subsequent callers (strips) still know whether to show().
 #if ENABLE_HUB75
             if (patterns.tick(hub75.getLeds(), HUB75_TOTAL_LEDS)) {
                 hub75.show();
@@ -140,6 +138,11 @@ int main() {
                 hub75Dirty = false;
             }
 #endif
+            for (int i = 0; i < NUM_STRIPS; i++) {
+                if (patterns.tick(leds.getLeds(i), cfg.strips[i].num_leds)) {
+                    leds.show();
+                }
+            }
         }
     }
 
