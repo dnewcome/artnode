@@ -80,6 +80,16 @@ int main() {
     // ---- Main loop ---------------------------------------------------------
     printf("[artnode] running\n");
 
+#if ENABLE_HUB75
+    // HUB75 show() calls SwapOnVSync which blocks until the matrix background
+    // thread completes a scan.  Calling it once per Art-Net universe (24× per
+    // frame) serialises the entire receive loop behind 24 blocking waits and
+    // can starve the socket buffer.  Rate-limit to one blit per frame instead.
+    uint32_t hub75LastShowMs = 0;
+    constexpr uint32_t HUB75_FRAME_MS = 33;  // ~30 fps
+    bool hub75Dirty = false;
+#endif
+
     while (s_running) {
         // -- Art-Net receive -------------------------------------------------
         if (cfg.node_mode != NodeMode::STANDALONE) {
@@ -95,10 +105,22 @@ int main() {
 
 #if ENABLE_HUB75
                 hub75.handleUniverse(static_cast<uint8_t>(universe), data, len);
-                hub75.show();
+                hub75Dirty = true;
 #endif
             });
         }
+
+        // -- HUB75 blit (rate-limited) ---------------------------------------
+#if ENABLE_HUB75
+        {
+            uint32_t now = millis();
+            if (hub75Dirty && (now - hub75LastShowMs >= HUB75_FRAME_MS)) {
+                hub75.show();
+                hub75LastShowMs = now;
+                hub75Dirty = false;
+            }
+        }
+#endif
 
         // -- Pattern engine --------------------------------------------------
         bool runPatterns = (cfg.node_mode == NodeMode::STANDALONE) ||
@@ -114,6 +136,8 @@ int main() {
 #if ENABLE_HUB75
             if (patterns.tick(hub75.getLeds(), HUB75_TOTAL_LEDS)) {
                 hub75.show();
+                hub75LastShowMs = millis();
+                hub75Dirty = false;
             }
 #endif
         }
