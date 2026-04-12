@@ -8,13 +8,18 @@
 
 void Hub75Controller::begin(const RuntimeConfig& cfg) {
     rgb_matrix::RGBMatrix::Options options;
-    options.hardware_mapping = HUB75_MAPPING;
-    options.rows             = HUB75_H;
-    options.cols             = HUB75_W;
-    options.chain_length     = HUB75_CHAIN;
-    options.parallel         = 1;
+    options.hardware_mapping         = HUB75_MAPPING;
+    options.rows                     = HUB75_H;
+    options.cols                     = HUB75_W;
+    options.chain_length             = HUB75_CHAIN;
+    options.parallel                 = 1;
     // brightness is 0-100 in rpi-rgb-led-matrix; scale from 0-255
-    options.brightness       = (cfg.brightness * 100 + 127) / 255;
+    options.brightness               = (cfg.brightness * 100 + 127) / 255;
+    // snd_bcm2835 (Pi built-in audio) conflicts with the hardware PWM pulse.
+    // Disable hardware pulsing to avoid the conflict; slight flicker trade-off.
+    // To eliminate flicker entirely: blacklist snd_bcm2835 or add
+    // dtparam=audio=off to /boot/config.txt and reboot.
+    options.disable_hardware_pulsing = true;
 
     rgb_matrix::RuntimeOptions runtime_opt;
     runtime_opt.gpio_slowdown  = HUB75_GPIO_SLOWDOWN;
@@ -33,7 +38,9 @@ void Hub75Controller::begin(const RuntimeConfig& cfg) {
 
 void Hub75Controller::handleUniverse(uint8_t universe, uint8_t* data, uint16_t length) {
     // Pixel data is laid out row-major across universes starting at HUB75_START_UNIVERSE.
+#if HUB75_START_UNIVERSE > 0
     if (universe < HUB75_START_UNIVERSE) return;
+#endif
 
     uint32_t byte_offset = static_cast<uint32_t>(universe - HUB75_START_UNIVERSE) * 512;
     uint32_t total_bytes = static_cast<uint32_t>(HUB75_TOTAL_LEDS) * 3;
