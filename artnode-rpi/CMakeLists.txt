@@ -78,13 +78,46 @@ endif()
 # HUB75 (optional, real hardware only)
 # ---------------------------------------------------------------------------
 if(ENABLE_HUB75)
+    # rpi-rgb-led-matrix — HUB75 matrix driver.
+    #
+    # We must NOT use FetchContent_MakeAvailable here because the library's
+    # CMakeLists.txt unconditionally calls find_package(Python 3.13 REQUIRED)
+    # even though Python is only used inside its scikit-build block.  That call
+    # fails on Raspbian (Python 3.9/3.11).  Workaround: populate the sources
+    # with FetchContent_Populate then build just the C++ library ourselves,
+    # exactly like the nlohmann/json workaround above.
     FetchContent_Declare(
         rgbmatrix
         GIT_REPOSITORY https://github.com/hzeller/rpi-rgb-led-matrix.git
         GIT_TAG        master
         GIT_SHALLOW    TRUE
     )
-    FetchContent_MakeAvailable(rgbmatrix)
+    FetchContent_GetProperties(rgbmatrix)
+    if(NOT rgbmatrix_POPULATED)
+        FetchContent_Populate(rgbmatrix)
+    endif()
+
+    add_library(rpi-rgb-led-matrix STATIC
+        ${rgbmatrix_SOURCE_DIR}/lib/bdf-font.cc
+        ${rgbmatrix_SOURCE_DIR}/lib/content-streamer.cc
+        ${rgbmatrix_SOURCE_DIR}/lib/framebuffer.cc
+        ${rgbmatrix_SOURCE_DIR}/lib/gpio.cc
+        ${rgbmatrix_SOURCE_DIR}/lib/graphics.cc
+        ${rgbmatrix_SOURCE_DIR}/lib/hardware-mapping.c
+        ${rgbmatrix_SOURCE_DIR}/lib/led-matrix.cc
+        ${rgbmatrix_SOURCE_DIR}/lib/led-matrix-c.cc
+        ${rgbmatrix_SOURCE_DIR}/lib/multiplex-mappers.cc
+        ${rgbmatrix_SOURCE_DIR}/lib/options-initialize.cc
+        ${rgbmatrix_SOURCE_DIR}/lib/pixel-mapper.cc
+        ${rgbmatrix_SOURCE_DIR}/lib/thread.cc
+    )
+    target_include_directories(rpi-rgb-led-matrix PUBLIC
+        ${rgbmatrix_SOURCE_DIR}/include
+        ${rgbmatrix_SOURCE_DIR}/lib
+    )
+    target_compile_options(rpi-rgb-led-matrix PRIVATE
+        -Wno-unused-parameter -Wno-pedantic
+    )
 endif()
 
 # ---------------------------------------------------------------------------
@@ -138,12 +171,8 @@ else()
 endif()
 
 if(ENABLE_HUB75)
-    target_include_directories(artnode-rpi PRIVATE
-        ${rgbmatrix_SOURCE_DIR}/include
-    )
-    target_link_libraries(artnode-rpi PRIVATE
-        rpi-rgb-led-matrix
-    )
+    # Include dirs are exposed transitively via the rpi-rgb-led-matrix target.
+    target_link_libraries(artnode-rpi PRIVATE rpi-rgb-led-matrix)
     target_compile_definitions(artnode-rpi PRIVATE ENABLE_HUB75=1)
 endif()
 
