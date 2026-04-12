@@ -228,6 +228,24 @@ Set in `src/config.h` before building:
 
 Panel pixels are addressed in row-major order starting at `HUB75_START_UNIVERSE`. Each 512-byte Art-Net universe carries 170 RGB pixels (510 bytes used, 2 padding). A 64×32 panel requires 12 universes (universes 0–11); a 64×64 panel requires 24.
 
+### Audio conflict and flicker
+
+The Pi's built-in audio driver (`snd_bcm2835`) uses the same hardware PWM peripheral as rpi-rgb-led-matrix. If the audio module is loaded, the library falls back to software PWM timing, which introduces visible flicker. The audio module is loaded by default on Raspberry Pi OS.
+
+**Quick fix — disable hardware pulsing in code (already the default in this project):**
+
+`src/config.h` has `options.disable_hardware_pulsing = true` set in `hub75_controller.cpp`, which allows the library to start without the audio conflict. Flicker will be present but the panel will work.
+
+**Full fix — disable the Pi audio module:**
+
+```bash
+# Add to /boot/config.txt (or /boot/firmware/config.txt on Pi 5 / Bookworm):
+echo "dtparam=audio=off" | sudo tee -a /boot/config.txt
+sudo reboot
+```
+
+After rebooting, set `options.disable_hardware_pulsing = false` in `src/hub75_controller.cpp` and rebuild. Hardware PWM will be used and the flicker will be gone. You can still use USB audio adapters — only the built-in 3.5 mm jack is affected.
+
 ### Pattern engine on panels
 
 When HUB75 is enabled, the spatial config is automatically set to **panel mode**: pixel `i` maps to column `i % panel_w`, row `i / panel_w`. All patterns use true 2D coordinates — PLASMA is particularly effective on a full panel.
