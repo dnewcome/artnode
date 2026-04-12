@@ -269,8 +269,7 @@ void WebConfig::begin(int port) {
 
                 if (doc.contains("hostname")) {
                     auto s = doc["hostname"].get<std::string>();
-                    strncpy(_cfg.hostname, s.c_str(), sizeof(_cfg.hostname));
-                    _cfg.hostname[sizeof(_cfg.hostname) - 1] = '\0';
+                    snprintf(_cfg.hostname, sizeof(_cfg.hostname), "%s", s.c_str());
                 }
                 if (doc.contains("brightness")) _cfg.brightness = doc["brightness"];
                 if (doc.contains("node_mode"))  _cfg.node_mode  = (NodeMode)doc["node_mode"].get<int>();

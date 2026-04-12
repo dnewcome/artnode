@@ -12,8 +12,7 @@ using json = nlohmann::json;
 static const char* CONFIG_PATH = ARTNODE_CONFIG_PATH;
 
 static void applyDefaults(RuntimeConfig& cfg) {
-    strncpy(cfg.hostname, "artnode", sizeof(cfg.hostname));
-    cfg.hostname[sizeof(cfg.hostname) - 1] = '\0';
+    snprintf(cfg.hostname, sizeof(cfg.hostname), "artnode");
     cfg.brightness = 200;
     cfg.node_mode  = NodeMode::DIRECT;
     for (int i = 0; i < NUM_STRIPS; i++) {
@@ -35,8 +34,7 @@ void loadConfig(RuntimeConfig& cfg) {
 
         if (j.contains("hostname")) {
             auto s = j["hostname"].get<std::string>();
-            strncpy(cfg.hostname, s.c_str(), sizeof(cfg.hostname));
-            cfg.hostname[sizeof(cfg.hostname) - 1] = '\0';
+            snprintf(cfg.hostname, sizeof(cfg.hostname), "%s", s.c_str());
         }
         if (j.contains("brightness")) cfg.brightness = j["brightness"].get<uint8_t>();
         if (j.contains("node_mode"))  cfg.node_mode  = (NodeMode)j["node_mode"].get<int>();
