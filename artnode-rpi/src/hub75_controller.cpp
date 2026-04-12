@@ -27,13 +27,7 @@ void Hub75Controller::begin(const RuntimeConfig& cfg) {
     }
     fprintf(stderr, "[hub75] matrix OK  brightness=%d\n", options.brightness);
 
-    _canvas = _matrix->CreateFrameCanvas();
-    if (!_canvas) {
-        fprintf(stderr, "[hub75] CreateFrameCanvas failed\n");
-        return;
-    }
-    fprintf(stderr, "[hub75] canvas OK\n");
-
+    fprintf(stderr, "[hub75] ready (direct-draw mode)\n");
     memset(_buf, 0, sizeof(_buf));
 }
 
@@ -73,7 +67,7 @@ void Hub75Controller::writeBytes(uint32_t byte_offset, uint8_t* data, uint16_t l
 }
 
 void Hub75Controller::show() {
-    if (!_canvas) return;
+    if (!_matrix) return;
 
     // Debug: log first call and sample pixel values
     static int showCount = 0;
@@ -85,14 +79,14 @@ void Hub75Controller::show() {
         showCount++;
     }
 
+    // Draw directly on the matrix canvas (no FrameCanvas double-buffering).
+    // Simpler path — eliminates SwapOnVSync as a potential failure point.
     int total_w = HUB75_W * HUB75_CHAIN;
     for (int i = 0; i < HUB75_TOTAL_LEDS; i++) {
         int x = i % total_w;
         int y = i / total_w;
-        _canvas->SetPixel(x, y, _buf[i].r, _buf[i].g, _buf[i].b);
+        _matrix->SetPixel(x, y, _buf[i].r, _buf[i].g, _buf[i].b);
     }
-    // SwapOnVSync returns the old (now free) canvas for reuse next frame
-    _canvas = _matrix->SwapOnVSync(_canvas);
 }
 
 #endif // ENABLE_HUB75
