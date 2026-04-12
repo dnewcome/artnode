@@ -25,7 +25,14 @@ void Hub75Controller::begin(const RuntimeConfig& cfg) {
         fprintf(stderr, "[hub75] RGBMatrix::CreateFromOptions failed\n");
         return;
     }
+    fprintf(stderr, "[hub75] matrix OK  brightness=%d\n", options.brightness);
+
     _canvas = _matrix->CreateFrameCanvas();
+    if (!_canvas) {
+        fprintf(stderr, "[hub75] CreateFrameCanvas failed\n");
+        return;
+    }
+    fprintf(stderr, "[hub75] canvas OK\n");
 
     memset(_buf, 0, sizeof(_buf));
 }
@@ -67,6 +74,16 @@ void Hub75Controller::writeBytes(uint32_t byte_offset, uint8_t* data, uint16_t l
 
 void Hub75Controller::show() {
     if (!_canvas) return;
+
+    // Debug: log first call and sample pixel values
+    static int showCount = 0;
+    if (showCount < 3) {
+        fprintf(stderr, "[hub75] show() #%d  buf[0]=(%d,%d,%d)  buf[512]=(%d,%d,%d)\n",
+                showCount,
+                _buf[0].r, _buf[0].g, _buf[0].b,
+                _buf[512].r, _buf[512].g, _buf[512].b);
+        showCount++;
+    }
 
     int total_w = HUB75_W * HUB75_CHAIN;
     for (int i = 0; i < HUB75_TOTAL_LEDS; i++) {
