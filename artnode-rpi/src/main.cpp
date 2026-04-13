@@ -94,7 +94,8 @@ int main() {
         // -- Art-Net receive -------------------------------------------------
         if (cfg.node_mode != NodeMode::STANDALONE) {
             artnet.poll([&](uint16_t universe, uint8_t* data, uint16_t len) {
-                webConfig.countFrame();
+                webConfig.countFrame(universe);
+                webConfig.setSource("artnet");
                 lastFrameMs = millis();
 
                 {
@@ -127,6 +128,7 @@ int main() {
                            (millis() - lastFrameMs > IDLE_TIMEOUT_MS);
 
         if (runPatterns) {
+            webConfig.setSource("patterns");
             std::lock_guard<std::mutex> lock(cfgMutex);
             // HUB75 ticks first so it captures the frame-gate firing.
             // tick() always renders to the buffer; returns true only once per

@@ -113,7 +113,10 @@ async function loadStatus() {
   const r = await fetch('/api/status');
   const d = await r.json();
   document.getElementById('status-box').innerHTML =
-    `IP: <span>${d.ip}</span> &nbsp; Uptime: <span>${fmt(d.uptime_s)}</span> &nbsp; Frames: <span>${d.frames}</span>`;
+    `IP: <span>${d.ip}</span> &nbsp; Uptime: <span>${fmt(d.uptime_s)}</span> &nbsp; `+
+    `Frames: <span>${d.frames}</span> &nbsp; FPS: <span>${d.fps}</span> &nbsp; `+
+    `Source: <span style="color:${d.source==='artnet'?'#4f4':'#fa4'}">${d.source}</span> &nbsp; `+
+    `Last universe: <span>${d.last_universe}</span>`;
 }
 
 function fmt(s) {
@@ -308,10 +311,16 @@ void WebConfig::begin(int port) {
 
     // GET /api/status
     _server->Get("/api/status", [this](const httplib::Request&, httplib::Response& res) {
+        uint32_t elapsed_s = (millis() - _startMs.load()) / 1000;
+        uint32_t frames    = _frames.load();
+        double   fps       = elapsed_s > 0 ? static_cast<double>(frames) / elapsed_s : 0.0;
         json j;
-        j["ip"]       = getLocalIP();
-        j["uptime_s"] = (millis() - _startMs.load()) / 1000;
-        j["frames"]   = _frames.load();
+        j["ip"]           = getLocalIP();
+        j["uptime_s"]     = elapsed_s;
+        j["frames"]       = frames;
+        j["fps"]          = static_cast<int>(fps * 10) / 10.0;  // 1 decimal place
+        j["source"]       = _source.load();
+        j["last_universe"]= _lastUniverse.load();
         res.set_content(j.dump(), "application/json");
     });
 
