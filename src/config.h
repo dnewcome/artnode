@@ -1,4 +1,5 @@
 #pragma once
+#include <stdint.h>
 
 // WiFi credentials
 #define WIFI_SSID "your_ssid"

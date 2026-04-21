@@ -1,0 +1,9 @@
+# Wokwi config for the VSCode extension / wokwi-cli.
+# Build first:  pio run -e wokwi
+# Then:         open wokwi/diagram.json in VSCode with the Wokwi extension,
+#               or run:  wokwi-cli wokwi/
+
+[wokwi]
+version = 1
+firmware = '../.pio/build/wokwi/firmware.bin'
+elf      = '../.pio/build/wokwi/firmware.elf'

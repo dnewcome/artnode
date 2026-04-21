@@ -40,7 +40,9 @@ src/
   status_led.h/cpp        Non-blocking status LED blink state machine
   web_config.h/cpp        HTTP server: config UI and REST API
   main.cpp                Mode-based init, Art-Net callback, main loop
-platformio.ini            Build environments (USB and OTA)
+platformio.ini            Build environments (USB, OTA, Wokwi simulator)
+sim/                      Python ESP-NOW mesh simulator + pygame visualization
+wokwi/                    Wokwi simulator setup (diagram.json, wokwi.toml)
 ```
 
 ## Operating Modes
@@ -199,6 +201,10 @@ The bridge also broadcasts pattern sync packets so mesh slave nodes running pane
 ## Building and Flashing
 
 This project uses [PlatformIO](https://platformio.org/).
+
+### Toolchain
+
+`platformio.ini` pins the platform to the [pioarduino fork of platform-espressif32](https://github.com/pioarduino/platform-espressif32), which provides **Arduino-ESP32 3.x** (ESP-IDF 5.x). The `esp_now_recv_info_t` signature and other modern APIs used in `espnow_mesh.cpp` require this. The first `pio run` downloads ~300 MB of toolchain on a fresh machine.
 
 **First flash (USB):**
 ```bash
@@ -418,7 +424,36 @@ Set `spatial.virt_w = 0` to disable spatial mapping. `panel_w` is set automatica
 | [ArtnetWifi](https://github.com/rstephan/ArtnetWifi) | Art-Net UDP receiver |
 | [ArduinoJson](https://arduinojson.org/) | JSON config serialization |
 | [ESP32-HUB75-MatrixPanel-DMA](https://github.com/mrfaptastic/ESP32-HUB75-MatrixPanel-DMA) | HUB75 RGB matrix panel output (optional) |
+| [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) | Required by the HUB75 library on Arduino-ESP32 3.x |
+| [Adafruit BusIO](https://github.com/adafruit/Adafruit_BusIO) | Transitive dep of Adafruit GFX |
 | ESP32 Arduino core (built-in) | WiFi, WebServer, mDNS, OTA, NVS Preferences, ESP-NOW |
+
+## Simulation
+
+Two complementary simulators ship with the repo for testing without hardware.
+
+### Python mesh simulator — `sim/`
+
+A pure-Python reimplementation of the ESP-NOW mesh protocol (packet layout, fragmentation, reassembly, pattern sync) with configurable loss / jitter / reorder on a shared broadcast bus. Useful for reasoning about how the protocol degrades under radio conditions that Wokwi doesn't model.
+
+```bash
+python3 sim/mesh_sim.py --nodes 6 --loss 0.1 --quiet
+python3 sim/mesh_viz.py --nodes 8 --loss 0.1    # pygame visualization
+```
+
+This tests a re-implementation of the protocol, not the firmware itself. See `sim/README.md`.
+
+### Wokwi simulator — `wokwi/`
+
+Runs the actual firmware on an emulated ESP32 with a visual WS2812 strip. Exercises real `espnow_mesh.cpp`, `FastLED.show()`, and Art-Net handling.
+
+```bash
+pio run -e wokwi                # build
+wokwi-cli wokwi/                # headless (requires WOKWI_CLI_TOKEN)
+# or: open wokwi/diagram.json in the Wokwi VSCode extension
+```
+
+See `wokwi/README.md` for setup details, including the required `config.h` tweaks and how to extend to a multi-chip ESP-NOW mesh demo.
 
 ## Adding More Strips
 
